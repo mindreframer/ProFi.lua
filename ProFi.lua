@@ -132,10 +132,15 @@ end
 	        [levels:number:optional] the amount of levels you wish to traceback, defaults to 1.
 ]]
 function ProFi:setInspect( methodName, levels )
-	self.inspect = {
-		['methodName'] = methodName;
-		['levels'] = levels or 1;
-	}
+	if self.inspect then
+		self.inspect.methodName = methodName
+		self.inspect.levels = levels or 1
+	else
+		self.inspect = {
+			['methodName'] = methodName;
+			['levels'] = levels or 1;
+		}
+	end
 end
 
 -----------------------
