@@ -17,8 +17,8 @@
 
 local ProFi = {}
 local onFunctionCalled, onFunctionReturn, sortByDurationDesc, sortByCallCount
-local DEFAULT_DEBUG_HOOK_COUNT = 0
-local FORMAT_TITLE 			= "%-50.50s: %-40.40s: %-20s"
+local DEFAULT_DEBUG_HOOK_COUNT  = 0
+local FORMAT_TITLE 		= "%-50.50s: %-40.40s: %-20s"
 local FORMAT_HEADER 		= "| %-50s: %-40s: %-20s: %-20s: %-20s|\n"
 local FORMAT_OUTPUT_LINE 	= "| %s: %-20s: %-20s|\n"
 
