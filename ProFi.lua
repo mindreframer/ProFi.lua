@@ -17,10 +17,15 @@
 
 local ProFi = {}
 local onDebugHook, sortByDurationDesc, sortByCallCount, getTime
-local DEFAULT_DEBUG_HOOK_COUNT  = 0
-local FORMAT_TITLE 		= "%-50.50s: %-40.40s: %-20s"
-local FORMAT_HEADER 		= "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
-local FORMAT_OUTPUT_LINE 	= "| %s: %-12s: %-12s: %-12s|\n"
+local DEFAULT_DEBUG_HOOK_COUNT = 0
+local FORMAT_TITLE             = "%-50.50s: %-40.40s: %-20s"
+local FORMAT_HEADER            = "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
+local FORMAT_OUTPUT_LINE       = "| %s: %-12s: %-12s: %-12s|\n"
+local FORMAT_INSPECTION_LINE   = "> %s: %-12s\n"
+local FORMAT_LINE              = "%4i"
+local FORMAT_TIME              = "%04.3f"
+local FORMAT_RELATIVE          = "%03.2f%%"
+local FORMAT_COUNT             = "%7i"
 
 -----------------------
 -- Public Methods:
@@ -40,6 +45,7 @@ function ProFi:start( param )
 			self.should_run_once = true
 		end
 	end
+	self.has_started  = true
 	self.has_finished = false
 	self:resetReports( self.reports )
 	self:startHooks()
@@ -63,6 +69,7 @@ end
 	Param: [filename:string:optional] defaults to 'ProFi.txt' if not specified.
 ]]
 function ProFi:writeReport( filename )
+	if not self.has_started then return end
 	filename = filename or 'ProFi.txt'
 	self:sortReportsWithSortMethod( self.reports, self.sortMethod )
 	self:writeReportsToFilename( self.reports, filename )
@@ -75,6 +82,7 @@ end
 function ProFi:reset()
 	self.reports = {}
 	self.reportsByTitle = {}
+	self.has_started  = false
 	self.has_finished = false
 	self.should_run_once = false
 	self.hookCount = self.hookCount or DEFAULT_DEBUG_HOOK_COUNT
@@ -115,6 +123,21 @@ function ProFi:setGetTimeMethod( getTimeMethod )
 	getTime = getTimeMethod
 end
 
+--[[
+	Allows you to inspect a specific method.
+	Will write to the report a list of methods that
+	call this method you're inspecting, you can optionally
+	provide a levels parameter to traceback a number of levels.
+	Params: [methodName:string] the name of the method you wish to inspect.
+	        [levels:number:optional] the amount of levels you wish to traceback, defaults to 1.
+]]
+function ProFi:setInspect( methodName, levels )
+	self.inspect = {
+		['methodName'] = methodName;
+		['levels'] = levels or 1;
+	}
+end
+
 -----------------------
 -- Implementations methods:
 -----------------------
@@ -138,7 +161,7 @@ function ProFi:getTitleFromFuncInfo( funcInfo )
 	local name        = funcInfo.name or 'anonymous'
 	local source      = funcInfo.short_src or 'C_FUNC'
 	local linedefined = funcInfo.linedefined or 0
-	linedefined = string.format( "%04i", linedefined )
+	linedefined = string.format( FORMAT_LINE, linedefined )
 	return string.format(FORMAT_TITLE, source, name, linedefined)
 end
 
@@ -177,19 +200,82 @@ function ProFi:writeReportsToFilename( reports, filename )
 	file:write( totalTimeOutput )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
-		local timer         = string.format("%04.3f", funcReport.timer)
-		local calledCounter = string.format("%07i", funcReport.calledCounter)
-		local relTime 		= string.format("%03.2f%%", (funcReport.timer / totalTime) * 100 )
+		local timer         = string.format(FORMAT_TIME, funcReport.timer)
+		local calledCounter = string.format(FORMAT_COUNT, funcReport.calledCounter)
+		local relTime 		= string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
 		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, calledCounter )
 		file:write( outputLine )
+		if funcReport.inspections then
+			self:writeInpsectionsToFile( funcReport.inspections, file )
+		end
 	end
 	file:close()
+end
+
+function ProFi:writeInpsectionsToFile( inspections, file )
+	file:write('\n==^ INSPECT ^======================================================================================================== COUNT ===\n')
+	for key, inspection in pairs( inspections ) do
+		local line 			= string.format(FORMAT_LINE, inspection.line)
+		local title 		= string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
+		local count 		= string.format(FORMAT_COUNT, inspection.count)
+		local outputLine    = string.format(FORMAT_INSPECTION_LINE, title, count )
+		file:write( outputLine )
+	end
+	file:write('===============================================================================================================================\n\n')
 end
 
 function ProFi:resetReports( reports )
 	for i, report in ipairs( reports ) do
 		report.timer = 0
 		report.calledCounter = 0
+		report.inspections = nil
+	end
+end
+
+function ProFi:shouldInspect( funcInfo )
+	return self.inspect and self.inspect.methodName == funcInfo.name
+end
+
+function ProFi:getInspectionsFromReport( funcReport )
+	local inspections = funcReport.inspections
+	if not inspections then
+		inspections = {}
+		funcReport.inspections = inspections
+	end
+	return inspections
+end
+
+function ProFi:getInspectionWithKeyFromInspections( key, inspections )
+	local inspection = inspections[key]
+	if not inspection then
+		inspection = {
+			['count']  = 0;
+		}
+		inspections[key] = inspection
+	end
+	return inspection
+end
+
+function ProFi:doInspection( inspect, funcReport )
+	local inspections = self:getInspectionsFromReport( funcReport )
+	local levels = inspect.levels
+	local currentLevel = 5
+	while currentLevel < levels do
+		local funcInfo = debug.getinfo( currentLevel, 'nS' )
+		if funcInfo then
+			local source = funcInfo.short_src or '[C]'
+			local name = funcInfo.name or 'anonymous'
+			local line = funcInfo.linedefined
+			local key = source..name..line
+			local inspection = self:getInspectionWithKeyFromInspections( key, inspections )
+			inspection.source = source
+			inspection.name = name
+			inspection.line = line
+			inspection.count = inspection.count + 1
+			currentLevel = currentLevel + 1
+		else
+			break
+		end
 	end
 end
 
@@ -197,6 +283,9 @@ function ProFi:onFunctionCall( funcInfo )
 	local funcReport = ProFi:getFuncReport( funcInfo )
 	funcReport.callTime = getTime()
 	funcReport.calledCounter = funcReport.calledCounter + 1
+	if self:shouldInspect( funcInfo ) then
+		self:doInspection( self.inspect, funcReport )
+	end
 end
 
 function ProFi:onFunctionReturn( funcInfo )
@@ -213,7 +302,7 @@ end
 getTime = os.clock
 
 onDebugHook = function( hookType )
-	local funcInfo = debug.getinfo( 2, 'nfS' )
+	local funcInfo = debug.getinfo( 2, 'nS' )
 	if hookType == "call" then
 		ProFi:onFunctionCall( funcInfo )
 	elseif hookType == "return" then
