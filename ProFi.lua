@@ -28,7 +28,7 @@ local FORMAT_LINENUM           = "%4i"
 local FORMAT_TIME              = "%04.3f"
 local FORMAT_RELATIVE          = "%03.2f%%"
 local FORMAT_COUNT             = "%7i"
-local FORMAT_BANNER 		   = [[
+local FORMAT_BANNER 	       = [[
 ###############################################################################################################
 #####  ProFi, a lua profiler. This profile was generated on: %s
 #####  ProFi is created by Luke Perkin 2012 under the MIT Licence, www.locofilm.co.uk
