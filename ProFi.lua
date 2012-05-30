@@ -1,5 +1,6 @@
 --[[
 	ProFi, by Luke Perkin 2012. MIT Licence http://www.opensource.org/licenses/mit-license.php.
+        V1.2
 
 	Example:
 		ProFi = require 'ProFi'
@@ -18,14 +19,23 @@
 local ProFi = {}
 local onDebugHook, sortByDurationDesc, sortByCallCount, getTime
 local DEFAULT_DEBUG_HOOK_COUNT = 0
-local FORMAT_TITLE             = "%-50.50s: %-40.40s: %-20s"
-local FORMAT_HEADER            = "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
+local FORMAT_HEADER_LINE       = "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
 local FORMAT_OUTPUT_LINE       = "| %s: %-12s: %-12s: %-12s|\n"
 local FORMAT_INSPECTION_LINE   = "> %s: %-12s\n"
-local FORMAT_LINE              = "%4i"
+local FORMAT_TOTALTIME_LINE    = "| TOTAL TIME = %f\n"
+local FORMAT_TITLE             = "%-50.50s: %-40.40s: %-20s"
+local FORMAT_LINENUM           = "%4i"
 local FORMAT_TIME              = "%04.3f"
 local FORMAT_RELATIVE          = "%03.2f%%"
 local FORMAT_COUNT             = "%7i"
+local FORMAT_BANNER 		   = [[
+###############################################################################################################
+#####  ProFi, a lua profiler. This profile was generated on: %s
+#####  ProFi is created by Luke Perkin 2012 under the MIT Licence, www.locofilm.co.uk
+#####  Version 1.2. Get the most recent version at this gist: https://gist.github.com/2838755
+###############################################################################################################
+
+]]
 
 -----------------------
 -- Public Methods:
@@ -166,7 +176,7 @@ function ProFi:getTitleFromFuncInfo( funcInfo )
 	local name        = funcInfo.name or 'anonymous'
 	local source      = funcInfo.short_src or 'C_FUNC'
 	local linedefined = funcInfo.linedefined or 0
-	linedefined = string.format( FORMAT_LINE, linedefined )
+	linedefined = string.format( FORMAT_LINENUM, linedefined )
 	return string.format(FORMAT_TITLE, source, name, linedefined)
 end
 
@@ -199,9 +209,10 @@ end
 function ProFi:writeReportsToFilename( reports, filename )
 	local file, err = io.open( filename, 'w' )
 	assert( file, err )
-	local header = string.format( FORMAT_HEADER, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED" )
+	self:writeBannerToFile( file )
+	local header = string.format( FORMAT_HEADER_LINE, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED" )
 	local totalTime = self.stopTime - self.startTime
-	local totalTimeOutput =  string.format("Total Time: %f\n", totalTime)
+	local totalTimeOutput =  string.format(FORMAT_TOTALTIME_LINE, totalTime)
 	file:write( totalTimeOutput )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
@@ -217,11 +228,16 @@ function ProFi:writeReportsToFilename( reports, filename )
 	file:close()
 end
 
+function ProFi:writeBannerToFile( file )
+	local banner = string.format(FORMAT_BANNER, os.date())
+	file:write( banner )
+end
+
 function ProFi:writeInpsectionsToFile( inspections, file )
 	local inspectionsList = self:sortInspectionsIntoList( inspections )
 	file:write('\n==^ INSPECT ^======================================================================================================== COUNT ===\n')
 	for i, inspection in ipairs( inspectionsList ) do
-		local line 			= string.format(FORMAT_LINE, inspection.line)
+		local line 			= string.format(FORMAT_LINENUM, inspection.line)
 		local title 		= string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
 		local count 		= string.format(FORMAT_COUNT, inspection.count)
 		local outputLine    = string.format(FORMAT_INSPECTION_LINE, title, count )
