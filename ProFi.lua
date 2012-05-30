@@ -171,7 +171,7 @@ function ProFi:createFuncReport( funcInfo )
 	local linedefined = funcInfo.linedefined or 0
 	local funcReport = {
 		['title']         = self:getTitleFromFuncInfo( funcInfo );
-		['calledCounter'] = 0;
+		['count'] = 0;
 		['timer']         = 0;
 	}
 	return funcReport
@@ -201,9 +201,9 @@ function ProFi:writeReportsToFilename( reports, filename )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
 		local timer         = string.format(FORMAT_TIME, funcReport.timer)
-		local calledCounter = string.format(FORMAT_COUNT, funcReport.calledCounter)
+		local count = string.format(FORMAT_COUNT, funcReport.count)
 		local relTime 		= string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
-		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, calledCounter )
+		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, count )
 		file:write( outputLine )
 		if funcReport.inspections then
 			self:writeInpsectionsToFile( funcReport.inspections, file )
@@ -213,8 +213,9 @@ function ProFi:writeReportsToFilename( reports, filename )
 end
 
 function ProFi:writeInpsectionsToFile( inspections, file )
+	local inspectionsList = self:sortInspectionsIntoList( inspections )
 	file:write('\n==^ INSPECT ^======================================================================================================== COUNT ===\n')
-	for key, inspection in pairs( inspections ) do
+	for i, inspection in ipairs( inspectionsList ) do
 		local line 			= string.format(FORMAT_LINE, inspection.line)
 		local title 		= string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
 		local count 		= string.format(FORMAT_COUNT, inspection.count)
@@ -224,10 +225,19 @@ function ProFi:writeInpsectionsToFile( inspections, file )
 	file:write('===============================================================================================================================\n\n')
 end
 
+function ProFi:sortInspectionsIntoList( inspections )
+	local inspectionsList = {}
+	for k, inspection in pairs(inspections) do
+		inspectionsList[#inspectionsList+1] = inspection
+	end
+	table.sort( inspectionsList, sortByCallCount )
+	return inspectionsList
+end
+
 function ProFi:resetReports( reports )
 	for i, report in ipairs( reports ) do
 		report.timer = 0
-		report.calledCounter = 0
+		report.count = 0
 		report.inspections = nil
 	end
 end
@@ -282,7 +292,7 @@ end
 function ProFi:onFunctionCall( funcInfo )
 	local funcReport = ProFi:getFuncReport( funcInfo )
 	funcReport.callTime = getTime()
-	funcReport.calledCounter = funcReport.calledCounter + 1
+	funcReport.count = funcReport.count + 1
 	if self:shouldInspect( funcInfo ) then
 		self:doInspection( self.inspect, funcReport )
 	end
@@ -315,7 +325,7 @@ sortByDurationDesc = function( a, b )
 end
 
 sortByCallCount = function( a, b )
-	return a.calledCounter > b.calledCounter
+	return a.count > b.count
 end
 
 -----------------------
