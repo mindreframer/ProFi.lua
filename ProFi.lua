@@ -185,9 +185,9 @@ function ProFi:createFuncReport( funcInfo )
 	local source = funcInfo.source or 'C Func'
 	local linedefined = funcInfo.linedefined or 0
 	local funcReport = {
-		['title']         = self:getTitleFromFuncInfo( funcInfo );
-		['count'] = 0;
-		['timer']         = 0;
+		['title']   = self:getTitleFromFuncInfo( funcInfo );
+		['count']   = 0;
+		['timer']   = 0;
 	}
 	return funcReport
 end
@@ -217,8 +217,8 @@ function ProFi:writeReportsToFilename( reports, filename )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
 		local timer         = string.format(FORMAT_TIME, funcReport.timer)
-		local count = string.format(FORMAT_COUNT, funcReport.count)
-		local relTime 		= string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
+		local count         = string.format(FORMAT_COUNT, funcReport.count)
+		local relTime       = string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
 		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, count )
 		file:write( outputLine )
 		if funcReport.inspections then
@@ -237,9 +237,9 @@ function ProFi:writeInpsectionsToFile( inspections, file )
 	local inspectionsList = self:sortInspectionsIntoList( inspections )
 	file:write('\n==^ INSPECT ^======================================================================================================== COUNT ===\n')
 	for i, inspection in ipairs( inspectionsList ) do
-		local line 			= string.format(FORMAT_LINENUM, inspection.line)
-		local title 		= string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
-		local count 		= string.format(FORMAT_COUNT, inspection.count)
+		local line 	    = string.format(FORMAT_LINENUM, inspection.line)
+		local title 	    = string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
+		local count 	    = string.format(FORMAT_COUNT, inspection.count)
 		local outputLine    = string.format(FORMAT_INSPECTION_LINE, title, count )
 		file:write( outputLine )
 	end
@@ -295,14 +295,14 @@ function ProFi:doInspection( inspect, funcReport )
 		local funcInfo = debug.getinfo( currentLevel, 'nS' )
 		if funcInfo then
 			local source = funcInfo.short_src or '[C]'
-			local name = funcInfo.name or 'anonymous'
-			local line = funcInfo.linedefined
-			local key = source..name..line
+			local name   = funcInfo.name or 'anonymous'
+			local line   = funcInfo.linedefined
+			local key    = source..name..line
 			local inspection = self:getInspectionWithKeyFromInspections( key, inspections )
 			inspection.source = source
-			inspection.name = name
-			inspection.line = line
-			inspection.count = inspection.count + 1
+			inspection.name   = name
+			inspection.line   = line
+			inspection.count  = inspection.count + 1
 			currentLevel = currentLevel + 1
 		else
 			break
