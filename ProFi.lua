@@ -16,11 +16,11 @@
 -----------------------
 
 local ProFi = {}
-local onFunctionCalled, onFunctionReturn, sortByDurationDesc, sortByCallCount
+local onDebugHook, sortByDurationDesc, sortByCallCount, getTime
 local DEFAULT_DEBUG_HOOK_COUNT  = 0
 local FORMAT_TITLE 		= "%-50.50s: %-40.40s: %-20s"
-local FORMAT_HEADER 		= "| %-50s: %-40s: %-20s: %-20s: %-20s|\n"
-local FORMAT_OUTPUT_LINE 	= "| %s: %-20s: %-20s|\n"
+local FORMAT_HEADER 		= "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
+local FORMAT_OUTPUT_LINE 	= "| %s: %-12s: %-12s: %-12s|\n"
 
 -----------------------
 -- Public Methods:
@@ -41,7 +41,9 @@ function ProFi:start( param )
 		end
 	end
 	self.has_finished = false
+	self:resetReports( self.reports )
 	self:startHooks()
+	self.startTime = getTime()
 end
 
 --[[
@@ -51,6 +53,7 @@ function ProFi:stop()
 	if self:shouldReturn() then 
 		return
 	end
+	self.stopTime = getTime()
 	self:stopHooks()
 	self.has_finished = true
 end
@@ -76,6 +79,7 @@ function ProFi:reset()
 	self.should_run_once = false
 	self.hookCount = self.hookCount or DEFAULT_DEBUG_HOOK_COUNT
 	self.sortMethod = self.sortMethod or sortByDurationDesc
+	self.inspect = nil
 end
 
 --[[
@@ -100,6 +104,15 @@ function ProFi:setSortMethod( sortType )
 	elseif sortType == 'count' then
 		self.sortMethod = sortByCallCount
 	end
+end
+
+--[[
+	By default the getTime method is os.clock (CPU time),
+	If you wish to use other time methods pass it to this function.
+	Param: [getTimeMethod:function]
+]]
+function ProFi:setGetTimeMethod( getTimeMethod )
+	getTime = getTimeMethod
 end
 
 -----------------------
@@ -142,8 +155,7 @@ function ProFi:createFuncReport( funcInfo )
 end
 
 function ProFi:startHooks()
-	debug.sethook( onFunctionCalled, 'c', self.hookCount )
-	debug.sethook( onFunctionReturn, 'r', self.hookCount )
+	debug.sethook( onDebugHook, 'cr', self.hookCount )
 end
 
 function ProFi:stopHooks()
@@ -159,32 +171,54 @@ end
 function ProFi:writeReportsToFilename( reports, filename )
 	local file, err = io.open( filename, 'w' )
 	assert( file, err )
-	local header = string.format( FORMAT_HEADER, "FILE", "FUNCTION", "LINE", "TIME", "CALLED" )
+	local header = string.format( FORMAT_HEADER, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED" )
+	local totalTime = self.stopTime - self.startTime
+	local totalTimeOutput =  string.format("Total Time: %f\n", totalTime)
+	file:write( totalTimeOutput )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
 		local timer         = string.format("%04.3f", funcReport.timer)
 		local calledCounter = string.format("%07i", funcReport.calledCounter)
-		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, calledCounter )
+		local relTime 		= string.format("%03.2f%%", (funcReport.timer / totalTime) * 100 )
+		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, calledCounter )
 		file:write( outputLine )
 	end
 	file:close()
+end
+
+function ProFi:resetReports( reports )
+	for i, report in ipairs( reports ) do
+		report.timer = 0
+		report.calledCounter = 0
+	end
+end
+
+function ProFi:onFunctionCall( funcInfo )
+	local funcReport = ProFi:getFuncReport( funcInfo )
+	funcReport.callTime = getTime()
+	funcReport.calledCounter = funcReport.calledCounter + 1
+end
+
+function ProFi:onFunctionReturn( funcInfo )
+	local funcReport = ProFi:getFuncReport( funcInfo )
+	if funcReport.callTime then
+		funcReport.timer = funcReport.timer + (getTime() - funcReport.callTime)
+	end
 end
 
 -----------------------
 -- Local Functions:
 -----------------------
 
-onFunctionCalled = function()
-	local funcInfo = debug.getinfo( 2, 'nfS' )
-	local funcReport = ProFi:getFuncReport( funcInfo )
-	funcReport.timer = os.clock()
-end
+getTime = os.clock
 
-onFunctionReturn = function()
+onDebugHook = function( hookType )
 	local funcInfo = debug.getinfo( 2, 'nfS' )
-	local funcReport = ProFi:getFuncReport( funcInfo )
-	funcReport.timer = os.clock() - funcReport.timer
-	funcReport.calledCounter = funcReport.calledCounter + 1
+	if hookType == "call" then
+		ProFi:onFunctionCall( funcInfo )
+	elseif hookType == "return" then
+		ProFi:onFunctionReturn( funcInfo )
+	end
 end
 
 sortByDurationDesc = function( a, b )
