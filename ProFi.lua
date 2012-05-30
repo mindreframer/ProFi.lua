@@ -273,7 +273,7 @@ end
 
 function ProFi:doInspection( inspect, funcReport )
 	local inspections = self:getInspectionsFromReport( funcReport )
-	local levels = inspect.levels
+	local levels = 5 + inspect.levels
 	local currentLevel = 5
 	while currentLevel < levels do
 		local funcInfo = debug.getinfo( currentLevel, 'nS' )
