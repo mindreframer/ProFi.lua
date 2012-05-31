@@ -1,7 +1,6 @@
 --[[
-	ProFi, by Luke Perkin 2012. MIT Licence http://www.opensource.org/licenses/mit-license.php.
-        V1.2
-
+	ProFi v1.3, by Luke Perkin 2012. MIT Licence http://www.opensource.org/licenses/mit-license.php.
+	
 	Example:
 		ProFi = require 'ProFi'
 		ProFi:start()
@@ -10,6 +9,17 @@
 		coroutine.resume( some_coroutine )
 		ProFi:end()
 		ProFi:writeReport( 'MyProfilingReport.txt' )
+
+	API:
+	*Arguments are specified as: type/name/default.
+		ProFi:start( string/once/nil )
+		ProFi:stop()
+		ProFi:checkMemory( number/interval/0, string/note/'' )
+		ProFi:writeReport( string/filename/'ProFi.txt' )
+		ProFi:reset()
+		ProFi:setHookCount( number/hookCount/0 )
+		ProFi:setGetTimeMethod( function/getTimeMethod/os.clock )
+		ProFi:setInspect( string/methodName, number/levels/1 )
 ]]
 
 -----------------------
@@ -23,16 +33,23 @@ local FORMAT_HEADER_LINE       = "| %-50s: %-40s: %-20s: %-12s: %-12s: %-12s|\n"
 local FORMAT_OUTPUT_LINE       = "| %s: %-12s: %-12s: %-12s|\n"
 local FORMAT_INSPECTION_LINE   = "> %s: %-12s\n"
 local FORMAT_TOTALTIME_LINE    = "| TOTAL TIME = %f\n"
+local FORMAT_MEMORY_LINE 	   = "| %-20s: %-16s: %-16s| %s\n"
+local FORMAT_HIGH_MEMORY_LINE  = "H %-20s: %-16s: %-16sH %s\n"
+local FORMAT_LOW_MEMORY_LINE   = "L %-20s: %-16s: %-16sL %s\n"
 local FORMAT_TITLE             = "%-50.50s: %-40.40s: %-20s"
 local FORMAT_LINENUM           = "%4i"
 local FORMAT_TIME              = "%04.3f"
 local FORMAT_RELATIVE          = "%03.2f%%"
 local FORMAT_COUNT             = "%7i"
-local FORMAT_BANNER 	       = [[
+local FORMAT_KBYTES  		   = "%7i Kbytes"
+local FORMAT_MBYTES  		   = "%7.1f Mbytes"
+local FORMAT_MEMORY_HEADER1    = "\n=== HIGH & LOW MEMORY USAGE ===============================\n"
+local FORMAT_MEMORY_HEADER2    = "=== MEMORY USAGE ==========================================\n"
+local FORMAT_BANNER 		   = [[
 ###############################################################################################################
 #####  ProFi, a lua profiler. This profile was generated on: %s
 #####  ProFi is created by Luke Perkin 2012 under the MIT Licence, www.locofilm.co.uk
-#####  Version 1.2. Get the most recent version at this gist: https://gist.github.com/2838755
+#####  Version 1.3. Get the most recent version at this gist: https://gist.github.com/2838755
 ###############################################################################################################
 
 ]]
@@ -74,16 +91,34 @@ function ProFi:stop()
 	self.has_finished = true
 end
 
+function ProFi:checkMemory( interval, note )
+	local time = getTime()
+	local interval = interval or 0
+	if self.lastCheckMemoryTime and time < self.lastCheckMemoryTime + interval then
+		return
+	end
+	self.lastCheckMemoryTime = time
+	local memoryReport = {
+		['time']   = time;
+		['memory'] = collectgarbage('count');
+		['note']   = note or '';
+	}
+	table.insert( self.memoryReports, memoryReport )
+	self:setHighestMemoryReport( memoryReport )
+	self:setLowestMemoryReport( memoryReport )
+end
+
 --[[
 	Writes the profile report to a file.
 	Param: [filename:string:optional] defaults to 'ProFi.txt' if not specified.
 ]]
 function ProFi:writeReport( filename )
-	if not self.has_started then return end
-	filename = filename or 'ProFi.txt'
-	self:sortReportsWithSortMethod( self.reports, self.sortMethod )
-	self:writeReportsToFilename( self.reports, filename )
-	print( string.format("[ProFi]\t Report written to %s", filename) )
+	if #self.reports > 0 or #self.memoryReports > 0 then
+		filename = filename or 'ProFi.txt'
+		self:sortReportsWithSortMethod( self.reports, self.sortMethod )
+		self:writeReportsToFilename( filename )
+		print( string.format("[ProFi]\t Report written to %s", filename) )
+	end
 end
 
 --[[
@@ -92,9 +127,13 @@ end
 function ProFi:reset()
 	self.reports = {}
 	self.reportsByTitle = {}
+	self.memoryReports  = {}
+	self.highestMemoryReport = nil
+	self.lowestMemoryReport  = nil
 	self.has_started  = false
 	self.has_finished = false
 	self.should_run_once = false
+	self.lastCheckMemoryTime = nil
 	self.hookCount = self.hookCount or DEFAULT_DEBUG_HOOK_COUNT
 	self.sortMethod = self.sortMethod or sortByDurationDesc
 	self.inspect = nil
@@ -185,9 +224,9 @@ function ProFi:createFuncReport( funcInfo )
 	local source = funcInfo.source or 'C Func'
 	local linedefined = funcInfo.linedefined or 0
 	local funcReport = {
-		['title']   = self:getTitleFromFuncInfo( funcInfo );
-		['count']   = 0;
-		['timer']   = 0;
+		['title']         = self:getTitleFromFuncInfo( funcInfo );
+		['count'] = 0;
+		['timer']         = 0;
 	}
 	return funcReport
 end
@@ -206,26 +245,66 @@ function ProFi:sortReportsWithSortMethod( reports, sortMethod )
 	end
 end
 
-function ProFi:writeReportsToFilename( reports, filename )
+function ProFi:writeReportsToFilename( filename )
 	local file, err = io.open( filename, 'w' )
 	assert( file, err )
 	self:writeBannerToFile( file )
-	local header = string.format( FORMAT_HEADER_LINE, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED" )
+	if #self.reports > 0 then
+		self:writeProfilingReportsToFile( self.reports, file )
+	end
+	if #self.memoryReports > 0 then
+		self:writeMemoryReportsToFile( self.memoryReports, file )
+	end
+	file:close()
+end
+
+function ProFi:writeProfilingReportsToFile( reports, file )
 	local totalTime = self.stopTime - self.startTime
 	local totalTimeOutput =  string.format(FORMAT_TOTALTIME_LINE, totalTime)
 	file:write( totalTimeOutput )
+	local header = string.format( FORMAT_HEADER_LINE, "FILE", "FUNCTION", "LINE", "TIME", "RELATIVE", "CALLED" )
 	file:write( header )
  	for i, funcReport in ipairs( reports ) do
 		local timer         = string.format(FORMAT_TIME, funcReport.timer)
 		local count         = string.format(FORMAT_COUNT, funcReport.count)
-		local relTime       = string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
+		local relTime 		= string.format(FORMAT_RELATIVE, (funcReport.timer / totalTime) * 100 )
 		local outputLine    = string.format(FORMAT_OUTPUT_LINE, funcReport.title, timer, relTime, count )
 		file:write( outputLine )
 		if funcReport.inspections then
 			self:writeInpsectionsToFile( funcReport.inspections, file )
 		end
 	end
-	file:close()
+end
+
+function ProFi:writeMemoryReportsToFile( reports, file )
+	file:write( FORMAT_MEMORY_HEADER1 )
+	self:writeHighestMemoryReportToFile( file )
+	self:writeLowestMemoryReportToFile( file )
+	file:write( FORMAT_MEMORY_HEADER2 )
+	for i, memoryReport in ipairs( reports ) do
+		local outputLine = self:formatMemoryReportWithFormatter( memoryReport, FORMAT_MEMORY_LINE )
+		file:write( outputLine )
+	end
+end
+
+function ProFi:writeHighestMemoryReportToFile( file )
+	local memoryReport = self.highestMemoryReport
+	local outputLine   = self:formatMemoryReportWithFormatter( memoryReport, FORMAT_HIGH_MEMORY_LINE )
+	file:write( outputLine )
+end
+
+function ProFi:writeLowestMemoryReportToFile( file )
+	local memoryReport = self.lowestMemoryReport
+	local outputLine   = self:formatMemoryReportWithFormatter( memoryReport, FORMAT_LOW_MEMORY_LINE )
+	file:write( outputLine )
+end
+
+function ProFi:formatMemoryReportWithFormatter( memoryReport, formatter )
+	local time       = string.format(FORMAT_TIME, memoryReport.time)
+	local kbytes     = string.format(FORMAT_KBYTES, memoryReport.memory)
+	local mbytes     = string.format(FORMAT_MBYTES, memoryReport.memory/1024)
+	local outputLine = string.format(formatter, time, kbytes, mbytes, memoryReport.note)
+	return outputLine
 end
 
 function ProFi:writeBannerToFile( file )
@@ -237,9 +316,9 @@ function ProFi:writeInpsectionsToFile( inspections, file )
 	local inspectionsList = self:sortInspectionsIntoList( inspections )
 	file:write('\n==^ INSPECT ^======================================================================================================== COUNT ===\n')
 	for i, inspection in ipairs( inspectionsList ) do
-		local line 	    = string.format(FORMAT_LINENUM, inspection.line)
-		local title 	    = string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
-		local count 	    = string.format(FORMAT_COUNT, inspection.count)
+		local line 			= string.format(FORMAT_LINENUM, inspection.line)
+		local title 		= string.format(FORMAT_TITLE, inspection.source, inspection.name, line)
+		local count 		= string.format(FORMAT_COUNT, inspection.count)
 		local outputLine    = string.format(FORMAT_INSPECTION_LINE, title, count )
 		file:write( outputLine )
 	end
@@ -295,14 +374,14 @@ function ProFi:doInspection( inspect, funcReport )
 		local funcInfo = debug.getinfo( currentLevel, 'nS' )
 		if funcInfo then
 			local source = funcInfo.short_src or '[C]'
-			local name   = funcInfo.name or 'anonymous'
-			local line   = funcInfo.linedefined
-			local key    = source..name..line
+			local name = funcInfo.name or 'anonymous'
+			local line = funcInfo.linedefined
+			local key = source..name..line
 			local inspection = self:getInspectionWithKeyFromInspections( key, inspections )
 			inspection.source = source
-			inspection.name   = name
-			inspection.line   = line
-			inspection.count  = inspection.count + 1
+			inspection.name = name
+			inspection.line = line
+			inspection.count = inspection.count + 1
 			currentLevel = currentLevel + 1
 		else
 			break
@@ -323,6 +402,26 @@ function ProFi:onFunctionReturn( funcInfo )
 	local funcReport = ProFi:getFuncReport( funcInfo )
 	if funcReport.callTime then
 		funcReport.timer = funcReport.timer + (getTime() - funcReport.callTime)
+	end
+end
+
+function ProFi:setHighestMemoryReport( memoryReport )
+	if not self.highestMemoryReport then
+		self.highestMemoryReport = memoryReport
+	else
+		if memoryReport.memory > self.highestMemoryReport.memory then
+			self.highestMemoryReport = memoryReport
+		end
+	end
+end
+
+function ProFi:setLowestMemoryReport( memoryReport )
+	if not self.lowestMemoryReport then
+		self.lowestMemoryReport = memoryReport
+	else
+		if memoryReport.memory < self.lowestMemoryReport.memory then
+			self.lowestMemoryReport = memoryReport
+		end
 	end
 end
 
