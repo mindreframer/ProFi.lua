@@ -7,7 +7,7 @@
 		some_function()
 		another_function()
 		coroutine.resume( some_coroutine )
-		ProFi:end()
+		ProFi:stop()
 		ProFi:writeReport( 'MyProfilingReport.txt' )
 
 	API:
