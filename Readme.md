@@ -17,11 +17,12 @@ Origin: https://gist.github.com/perky/2838755
 ## API:
 
   Arguments are specified as: type/name/default.
-    ProFi:start( string/once/nil )
-    ProFi:stop()
-    ProFi:checkMemory( number/interval/0, string/note/'' )
-    ProFi:writeReport( string/filename/'ProFi.txt' )
-    ProFi:reset()
-    ProFi:setHookCount( number/hookCount/0 )
-    ProFi:setGetTimeMethod( function/getTimeMethod/os.clock )
-    ProFi:setInspect( string/methodName, number/levels/1 )
+
+      ProFi:start( string/once/nil )
+      ProFi:stop()
+      ProFi:checkMemory( number/interval/0, string/note/'' )
+      ProFi:writeReport( string/filename/'ProFi.txt' )
+      ProFi:reset()
+      ProFi:setHookCount( number/hookCount/0 )
+      ProFi:setGetTimeMethod( function/getTimeMethod/os.clock )
+      ProFi:setInspect( string/methodName, number/levels/1 )
